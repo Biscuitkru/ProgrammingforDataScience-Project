@@ -1,0 +1,84 @@
+---
+title: "Qs1 Rmd 190398965"
+author: "Victor Min"
+date: "3/24/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Q1. When is the best time of day, day of the week, and time of year to fly to minimize delays? 
+
+## Setting up of Database
+```{r}
+library(DBI)
+library(dplyr)
+library(ggplot2)
+
+if (file.exists("airline2_r.db")) 
+  file.remove("airline2_r.db")
+
+conn <- dbConnect(RSQLite::SQLite(), "airline2_r.db")
+
+airports <- read.csv("airports.csv", header = TRUE)
+carriers <- read.csv("carriers.csv", header = TRUE)
+planes <- read.csv("plane-data.csv", header = TRUE)
+dbWriteTable(conn, "airports", airports)
+dbWriteTable(conn, "carriers", carriers)
+dbWriteTable(conn, "planes", planes)
+
+## We will be using data from 2006~2008, bearing in mind that the 2008 data only has data ranging from Jan to April
+## Therefore it shall be used to supplement the other 2 years data
+six <- read.csv("2006.csv", header = TRUE)
+seven <- read.csv("2007.csv", header = TRUE)
+eight <- read.csv("2008.csv", header = TRUE)
+ontime <- rbind(six, seven, eight)
+dbWriteTable(conn, "ontime", ontime)
+dbListTables(conn)
+dbListFields(conn, "ontime")
+```
+
+## Average departure delay based on month of the year to go
+
+```{r}
+AvgDelayMonth <- dbGetQuery(conn, "SELECT Month AS Month, AVG(DepDelay) AS Avg_DepDelay, AVG(ArrDelay) AS Avg_ArrDelay
+FROM ontime 
+GROUP BY month
+ORDER BY avg_DepDelay")
+
+AvgDelay <- (AvgDelayMonth$Avg_DepDelay + AvgDelayMonth$Avg_ArrDelay)
+AvgDelayMonth <- cbind(AvgDelayMonth, AvgDelay)
+AvgDelayMonth[,'AvgDelay']=format(round(AvgDelayMonth[,'AvgDelay'],3),nsmall=3)
+AvgDelayMonth
+## Best month of the year to travel would be during September where the avg delays experienced is about 13.4 minutes
+```
+
+## A bar graph showing the average delay of each month
+
+```{r pressure, echo=FALSE}
+AvgDelayMonth %>%
+  mutate(Month=factor(x=Month, labels=c("1", "2", "3","4","5","6","7","8","9","10","11","12"))) %>%
+  ggplot(aes(x=Month, y=AvgDelay, fill=AvgDelay, label=AvgDelay)) + 
+  geom_bar(stat="identity") + 
+  ggtitle("Average Delay of flights for each month") + 
+  xlab("Month") +
+  theme(legend.position="none")
+```
+
+## For where Month = 9, The best day of the week and what time of the day
+
+```{r}
+AvgDelayWeek <- dbGetQuery(conn, "SELECT Month AS Month, DayOfWeek AS Day, AVG(DepDelay) AS Avg_DepDelay, AVG(ArrDelay) AS Avg_ArrDelay, DepTime AS DepTime
+FROM ontime WHERE ontime.Month = 9
+GROUP BY DayOfWeek
+ORDER BY avg_DepDelay")
+AvgDelay <- (AvgDelayWeek$Avg_DepDelay + AvgDelayWeek$Avg_ArrDelay)
+AvgDelayWeek <- cbind(AvgDelayWeek, AvgDelay)
+AvgDelayWeek[,'AvgDelay']=format(round(AvgDelayWeek[,'AvgDelay'],3),nsmall=3)
+AvgDelayWeek
+## Saturdays of each week during September offer the lowest Delays averaging around 7.8~7.9 minutes
+## The best time for Departure would be around 1941(Wed) and 1112(Sat)
+```
+

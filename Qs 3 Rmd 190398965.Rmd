@@ -1,0 +1,78 @@
+---
+title: "Qs 3 Rmd 190398965"
+author: "Victor Min"
+date: "3/24/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Q3. How does the number of people flying between different locations change over time?
+## Given that there is no exact no. of people flying in each flights, I'll be using no. of flights as a proxy for number of people
+
+```{r}
+library(DBI)
+library(dplyr)
+
+# Database from Q1
+conn <- dbConnect(RSQLite::SQLite(), "airline2_r.db")
+six <- read.csv("2006.csv", header = TRUE)
+seven <- read.csv("2007.csv", header = TRUE)
+eight <- read.csv("2008.csv", header = TRUE)
+ontime <- rbind(six, seven, eight)
+
+## In order to get a more accurate sense of the no. of flights between destinations i will be combining Origin and Destination
+## into a new variable, FlightPath where it can be read as ORIGIN DEST.
+
+ontime$FlightPath = paste(ontime$Origin, ontime$Dest)
+dbWriteTable(conn, "ontime", ontime, overwrite = TRUE)
+
+Y2006 <- dbGetQuery(conn, "SELECT Year as Year, FlightPath as FlightPath, COUNT(*) AS Total 
+                 FROM ontime WHERE Year = 2006 and Cancelled = 0 
+                 GROUP BY FlightPath
+                 ORDER BY total DESC")
+
+Y2007 <- dbGetQuery(conn, "SELECT Year as Year, FlightPath as FlightPath, COUNT(*) AS Total 
+                 FROM ontime WHERE Year = 2007 and Cancelled = 0 
+                 GROUP BY FlightPath
+                 ORDER BY total DESC")
+
+Y2008 <- dbGetQuery(conn, "SELECT Year as Year, FlightPath as FlightPath, COUNT(*) AS Total 
+                 FROM ontime WHERE Year = 2008 and Cancelled = 0 
+                 GROUP BY FlightPath
+                 ORDER BY total DESC")
+
+q6 <- head(Y2006,100)
+q7 <- head(Y2007,100)
+q8 <- head(Y2008,100)
+
+## Change in popular flights between destinations over 2006~2008
+FlightPath <- cbind(q5,q6,q7)
+head(FlightPath,10)
+
+```
+## Creating a lineplot to showcase the flightpaths I am focusing on
+```{r}
+## Extracting flights that I would like to focus on
+F6 <- q6[c(1,2,3,4,10,14),]
+F7 <- q7[c(7,8,1,2,9,13),]
+F8 <- q8[c(12,14,3,4,7,11),]
+
+## Since the 2008 dataset only consists of up to 4 months, assuming the amount of flights remain constant throughout the year
+## I multiply the number of flights between the places by 3 to act as a sort of rough estimation for the flights in 2008
+F8$Total<- F8$Total*3
+FlightPath2 <- rbind(F6,F7,F8)
+
+```
+
+```{r pressure, echo=FALSE}
+library(ggplot2)
+
+ggplot(FlightPath2, mapping = aes(x = Year, y = Total, color=FlightPath)) + 
+  geom_line() +
+  labs(title = "Change in number of flights between destinations over time", x = "Year", y = "Total Flights")
+
+```
+

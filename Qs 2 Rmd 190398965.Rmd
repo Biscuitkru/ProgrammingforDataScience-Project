@@ -1,0 +1,71 @@
+---
+title: "Qs 2 Rmd 190398965"
+author: "Victor Min"
+date: "3/24/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Q2. Do older planes suffer more delays?
+
+```{r}
+library(DBI)
+library(dplyr)
+library(ggplot2)
+
+## Database taken from Qs 1
+conn <- dbConnect(RSQLite::SQLite(), "airline2_r.db")
+
+library(dbplyr)
+planes_db <- tbl(conn, "planes")
+ontime_db <- tbl(conn, "ontime")
+
+## Keeping in mind of the standard used which is "older" planes, we will be using issue_date as the standard for how old a plane is
+## Where the plane data csv keeps plane issue_dates from 1976 ~ 2008
+
+## Whether older planes really suffer more delays in terms of top outliers
+## Mean average of their DepDelay and ArrDelay
+
+issuedate <- ontime_db %>% 
+  rename_all(tolower) %>%
+  inner_join(planes_db, by = "tailnum", suffix = c(".ontime", ".planes")) %>%
+  filter(ArrDelay >= 0 & DepDelay > 0) %>%
+  group_by(issue_date) %>%
+  summarize(avg_delay = (DepDelay+ArrDelay), DepDelay, ArrDelay) %>%
+  arrange(desc(avg_delay)) 
+print((issuedate),10)
+```
+## For dates ranging from 1976 ~ 2008, this might seem contradictory to the question in a sense, the more "newer" planes have experienced more delays as compared to its "older" counterparts
+
+## However the delays mentioned here are more generalised, hence I will be using CarrierDelay, WeatherDelay, NASDelay, LateAircraftDelay to showcase delays instead for the next part
+
+## The type of delay that would be most applicable to answer this question is CarrierDelay since its the most indicative way of seeing whether "Older" planes require more maintenance as compared to newer ones potentially causing the delays rather then third-party delays
+
+```{r}
+CarDelay <- dbGetQuery(conn, "SELECT planes.issue_date as Issue_Date, AVG(CarrierDelay) AS CarrierDelay, 
+AVG(WeatherDelay) AS WeatherDelay, AVG(NASDelay) AS NASDelay, AVG(SecurityDelay) AS SecurityDelay, AVG(LateAircraftDelay) AS LateAircraftDelay
+FROM ontime JOIN planes ON ontime.TailNum = planes.tailnum
+WHERE CarrierDelay > 0
+GROUP BY Issue_Date
+ORDER BY CarrierDelay DESC")
+
+head(CarDelay,10)
+```
+## Once again, this leans more into the idea that newer planes experience more delays as compared to its older counter parts.
+
+## Scatter plot for Date a plane is issued to CarrierDelay along with finding the coefficient of linear regression
+```{r pressure, echo=FALSE}
+CarDelay$Issue_Date <- as.Date(CarDelay$Issue_Date, format = "%m/%d/%Y")
+
+suppressWarnings(print(ggplot(data=CarDelay, aes(x = Issue_Date, y = CarrierDelay)) +
+                         geom_point(color = "maroon") +
+                         geom_smooth(method = "lm", se = TRUE) +
+                         labs(title = "Date to Carrier Delay Scatterplot")))
+
+DateDelayModel <- lm(formula(CarDelay$CarrierDelay ~ CarDelay$Issue_Date))
+summary(DateDelayModel)
+```
+## Linear model shows that Issue date has a negative coefficient signifying that older planes do indeed experience more delays as compared to newer planes

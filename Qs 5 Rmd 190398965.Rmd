@@ -1,0 +1,136 @@
+---
+title: "Qs 5 Rmd 190398965"
+author: "Victor Min"
+date: "3/24/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Q5. Use the available variables to construct a model that predicts delays
+
+## Which Variables would be useful in predicting delays?
+## CRSDepTime(scheduled departure time), CRSArrTime(scheduled arrival time), CRSElapsedtime(scheduled time taken), Distance
+## Since the dataset is very big, I will only be using one year's worth of data, 2007
+```{r}
+## Computation times will be much longer here as I went for accuracy in results
+memory.limit(45000)
+gc()
+library(glmnet)
+library(caTools)
+library(corrplot)
+
+seven <- read.csv("2007.csv", header = TRUE)
+Delay <- seven[,-c(15,16)]
+Delay[sapply(Delay, is.character)] <- lapply(Delay[sapply(Delay, is.character)], as.factor)
+
+## Combination of ArrDelay and DepDelay into TotalDelay
+TotalDelay <- as.matrix(rowSums(seven[,c("ArrDelay", "DepDelay")], na.rm=TRUE))
+Delay <- cbind(Delay, TotalDelay)
+Delay$TotalDelay <- as.integer(Delay$TotalDelay)
+
+## Removing all the cases where variables read NA as it might interfere with the regression calculations
+Delay <- Delay[complete.cases(Delay),]
+DelaySet <- Delay[,c(6, 8, 13, 17, 28)]
+
+x <- data.matrix(DelaySet[,1:4])
+y <- as.matrix(DelaySet[,5])
+
+# 70-30 Train test split
+set.seed(2022)
+train <- sample.split(Y = Delay$TotalDelay , SplitRatio = 0.7)
+trainset1 <- subset(DelaySet, train == T)
+testset1 <- subset(DelaySet, train == F)
+
+mlr1 <- lm(TotalDelay ~ ., data=trainset1)
+summary(mlr1)
+rmse <- mean(residuals(mlr1)^2)
+rmse <- sqrt(rmse)
+rmse
+## 73.56909
+
+## The multiple linear regression model for Delay can be improved via lasso/ridge
+DelaySetA <- data.matrix(DelaySet)
+trainset2 <- subset(DelaySetA, train == T)
+testset2 <- subset(DelaySetA, train == F)
+```
+## 73.56909, RMSE can be improved via lasso/ridge
+
+## Ridge Regression
+
+```{r}
+grid <- 10^seq(10,-2,length=25)
+## Since its a big dataset, i will only be using the minimum amount of folds
+ridge.mod <- cv.glmnet(x = trainset2[, 1:4], y = trainset2[,5], alpha = 0, lambda = grid)
+cv.out = cv.glmnet(x = trainset2[, 1:4], y = trainset2[,5], alpha = 0)
+bestlambda=cv.out$lambda.min
+bestlambda
+## 1.07958
+ridge.prediction=predict(ridge.mod, s= bestlambda, newx = testset2[, 1:4])
+
+## Summary of ridge predictions
+summary(ridge.prediction)
+RMSE.ridge <- sqrt(mean((ridge.prediction-testset2[,5])^2))
+RMSE.ridge
+# 72.21144
+outcome <- glmnet(x,y,alpha=0, lambda=grid)
+ridge.coef <- predict(outcome,type="coefficients",s=bestlambda)
+ridge.coef
+head(ridge.prediction, 5)
+```
+## best lambda = 1.07958, Rmse = 72.21144
+
+## Lasso Regression
+
+```{r}
+lasso.mod <- cv.glmnet(x = trainset2[, 1:4], y = trainset2[,5], alpha = 1, lambda = grid)
+cv.out = cv.glmnet(x = trainset2[, 1:4], y = trainset2[,5], alpha = 1)
+bestlambdal=cv.out$lambda.min
+bestlambdal
+## 0.004783209
+lasso.prediction=predict(lasso.mod, s = bestlambda, newx = testset2[,1:4])
+
+## Summary of lasso predictions
+summary(lasso.prediction)
+RMSE.lasso <- sqrt(mean((lasso.prediction-testset2[,5])^2))
+RMSE.lasso
+# 72.26279
+outcome2 <- glmnet(x,y,alpha=1, lambda=grid)
+lasso.coef <- predict(outcome2,type="coefficients",s=bestlambda)
+lasso.coef
+head(lasso.prediction)
+```
+## best lambda = 0.004783209, Rmse = 72.26279
+## Since Ridge regression has a lower RMSE as compared to Lasso regression, the ridge regression model will be used to represent the prediction model
+
+## Logistic Regression
+
+```{r}
+## Changing the variable TotalDelay into a binary one where if the delay is more than 10 minutes, it'll be 1 and 0 otherwise
+library(caret)
+library(dplyr)
+
+DelaySetL <- DelaySet
+DelaySetL <- DelaySetL %>%
+  mutate(Delayed = if_else(TotalDelay > 10, 1 , 0))
+DelaySetL$Delayed <- as.factor(DelaySetL$Delayed)
+
+## TotalDelay variable is removed as it is now represented as Delayed
+DelaySetL <- DelaySetL %>% select(-TotalDelay)
+trainset3 <- subset(DelaySetL, train == T)
+testset3 <- subset(DelaySetL, train == F)
+
+logreg.mod <- train(Delayed ~ ., data = trainset3, method = "glm", family = "binomial",
+                    trControl=trainControl(method = "cv", number = 3))
+
+logreg.predict <- predict(logreg.mod, testset3)
+
+confusionmatrix <- confusionMatrix(logreg.predict, testset3[,"Delayed"])
+confusionmatrix
+# (1391065+39251)/(2182528) = 0.655 (3s.f)
+# Accuracy of 65.5%
+```
+# (1391065+39251)/(2182528) = 0.655 (3s.f)
+# Accuracy of 65.5%

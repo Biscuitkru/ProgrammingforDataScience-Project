@@ -1,0 +1,160 @@
+---
+title: "Qs 4 Rmd 190398965"
+author: "Victor Min"
+date: "3/28/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Q4. Can you detect cascading failures as delays in one airport create delays in others?
+
+```{r}
+library(DBI)
+library(dplyr)
+
+conn <- dbConnect(RSQLite::SQLite(), "airline2_r.db")
+## Since the dataset being used is very big, I'll be using data from only two airports refercing the flights between them 
+AirportDelay <- dbGetQuery(conn, "SELECT airports.airport as Airport, DepDelay AS DepDelay, 
+ArrDelay AS ArrDelay
+FROM ontime JOIN airports ON ontime.Dest = airports.iata
+GROUP BY Airport
+ORDER BY DepDelay DESC")
+
+## Since Marquette Country Airport experiences the most delays, i'll be focusing on this airport
+MarquetteOri <- dbGetQuery(conn, "SELECT Origin, Dest, CRSDepTime,CRSArrTime, DepTime, ArrTime, DepDelay, ArrDelay
+FROM ontime WHERE Origin = 'MQT'
+GROUP BY DepDelay
+ORDER BY DepDelay DESC")
+
+## Remove cases which have NAs where all of them are in ArrTime as they likely representing flights that have diverted
+MarquetteOri <- MarquetteOri[complete.cases(MarquetteOri),]
+
+head(MarquetteOri)
+
+## Check whether Departure delays in MQT results in Arrival delays for Dest
+MarquetteDest <- dbGetQuery(conn, "SELECT Origin, Dest, CRSDepTime,CRSArrTime, DepTime, ArrTime, DepDelay, ArrDelay
+FROM ontime WHERE Dest = 'MQT'
+GROUP BY ArrDelay
+ORDER BY ArrDelay DESC")
+
+## Removing NA variables
+MarquetteDest <- MarquetteDest[complete.cases(MarquetteDest),]
+
+head(MarquetteDest)
+
+dbDisconnect(conn)
+```
+## Hierarchical clustering
+
+```{r}
+MarquetteOriDest <- dplyr::inner_join(MarquetteOri, MarquetteDest, by = c("Dest"="Origin"))
+# Keeping only flights between MQT and ORD
+MarquetteOriDest <- dplyr::filter(MarquetteOriDest, Dest %in% c("ORD"))
+MqOriDest <- select(MarquetteOriDest,-c(Origin,Dest,Dest.y,))
+
+## Hierarchical clustering
+MqOriDest.scaled <- scale(MqOriDest)
+library(ISLR)
+set.seed(2022)
+# Scaled function
+hc = hclust(dist(t(MqOriDest.scaled)), method = "complete")
+## 2 Main Clusters with Arr/Dep Delay in the second airport being in the same cluster Arr/Dep Delay in the first airport
+
+```
+
+```{r pressure, echo=FALSE}
+plot(hc, main = "Dendrogram for MQT and ORD")
+```
+
+## To further summarise the data, I will be performing K-means clustering to find out how significant Arr/Dep Delay in the first airport are as differentiators for the Arr/Dep Delay in the second airport.
+
+# K-means clustering
+
+```{r}
+## Data Wrangling
+mq.km <- kmeans(MqOriDest.scaled, centers = 2)
+
+mq.kmR <- data.frame(MqOriDest$DepTime.x, MqOriDest$ArrTime.x, MqOriDest$DepDelay.x,
+                     MqOriDest$ArrDelay.x, MqOriDest$DepTime.y,
+                     MqOriDest$ArrTime.y,MqOriDest$DepDelay.y, 
+                     MqOriDest$ArrDelay.y, mq.km$cluster)
+## How DepDelay.X affects Dep/Arr Delays on the second airport
+
+## In order to perform K-Means clustering, I will first separate the delays in differing groups in terms of how long the delay is
+## No Delays =< 10, Short Delay > 10 & =< 60, Medium Delay > 60 & =< 150, Long Delay > 150
+library(data.table)
+delaybreaks <- c(-25, 10, 60, 150, 500)
+delaylabels <- c("Not Delayed", "Short Delay", "Medium Delay", "Long Delay")
+
+setDT(mq.kmR)[, MqOriDest.DepDelay.y := cut(MqOriDest.DepDelay.y, 
+                                breaks = delaybreaks, 
+                                right = FALSE, 
+                                labels = delaylabels)]
+setDT(mq.kmR)[, MqOriDest.ArrDelay.y := cut(MqOriDest.ArrDelay.y, 
+                                            breaks = delaybreaks, 
+                                            right = FALSE, 
+                                            labels = delaylabels)]
+
+## How ArrDelay.X affects Dep/Arr Delays on the second airport
+## If Arr/DepDelay.x > 60, count as a delay has occured
+## a delay of an hour in the initial airport will much more clearly showcase cascading delays for flights following after it
+mq.kmR$MqOriDest.ArrDelay.x <- ifelse((mq.kmR$MqOriDest.ArrDelay.x >= 60) , 'Delayed', 'Not Delayed')
+mq.kmR$MqOriDest.DepDelay.x <- ifelse((mq.kmR$MqOriDest.DepDelay.x >= 60) , 'Delayed', 'Not Delayed')
+
+cluster1 <- subset(mq.kmR, mq.km$cluster==1)
+cluster2 <- subset(mq.kmR, mq.km$cluster==2)
+
+cluster1$MqOriDest.DepDelay.y <- factor(cluster1$MqOriDest.DepDelay.y)
+cluster2$MqOriDest.DepDelay.y <- factor(cluster2$MqOriDest.DepDelay.y)
+cluster1$MqOriDest.ArrDelay.y <- factor(cluster1$MqOriDest.ArrDelay.y)
+cluster2$MqOriDest.ArrDelay.y <- factor(cluster2$MqOriDest.ArrDelay.y)
+
+cluster1$MqOriDest.ArrDelay.x <- factor(cluster1$MqOriDest.ArrDelay.x)
+cluster2$MqOriDest.ArrDelay.x <- factor(cluster2$MqOriDest.ArrDelay.x)
+cluster1$MqOriDest.DepDelay.x <- factor(cluster1$MqOriDest.DepDelay.x)
+cluster2$MqOriDest.DepDelay.x <- factor(cluster2$MqOriDest.DepDelay.x)
+```
+
+```{r}
+## Comparisons between how Dep/ArrDelay in the first airport affects delays in the second airport
+## For Cluster 1
+
+summary(cluster1$MqOriDest.DepDelay.y)
+summary(cluster1$MqOriDest.ArrDelay.y)
+## Both cluster results are similar where there is a lot more medium and long delays
+round(prop.table(table(cluster1$MqOriDest.DepDelay.x)),2)
+round(prop.table(table(cluster1$MqOriDest.ArrDelay.x)),2)
+
+## Cluster 1 has a majority of flights that are do not have any DepDelay in the first airport however it still resulted in there being a lot of medium and long delays in the second airport which would mean that DepDelays in the first airport does not necessarily lead to cascading delays
+
+M1 <- as.matrix(table(cluster1$MqOriDest.DepDelay.x))
+p.null1 <- as.vector(prop.table(table(cluster2$MqOriDest.DepDelay.x)))
+chisq.test(M1, p = p.null1)
+## p-value < 0.05, significant
+```
+
+## How arrdelay in the first airport affects delays in the second airport
+
+```{r}
+## Comparisons between how Dep/ArrDelay in the first airport affects delays in the second airport
+## For Cluster 2
+
+summary(cluster2$MqOriDest.DepDelay.y)
+summary(cluster2$MqOriDest.ArrDelay.y)
+## Pretty similar cluster results once again where medium and long delays are a lot more common
+round(prop.table(table(cluster2$MqOriDest.DepDelay.x)),2)
+round(prop.table(table(cluster2$MqOriDest.ArrDelay.x)),2)
+
+## Although cluster 2 aligns well into the idea that delays in the first airport can result in cascading delays, it does not help cluster 1's case hence i will be leaning more into the idea that you cannot detect cascading delays whereby delays in one airport creates delays in others at least that is the case for flights between MQT and ORD.
+
+## This is also due to the idea that the delays in the second airport could be a result of other various third-party interference as compared to being a correlation to delays in the initial airport.
+
+M1 <- as.matrix(table(cluster1$MqOriDest.ArrDelay.x))
+p.null1 <- as.vector(prop.table(table(cluster2$MqOriDest.ArrDelay.x)))
+chisq.test(M1, p = p.null1)
+
+## Both results are significant in explaining whether Arr/DepDelay in the first airport affects delays
+## in the second airport
+```
