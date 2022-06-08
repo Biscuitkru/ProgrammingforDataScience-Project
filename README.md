@@ -1,7 +1,8 @@
 ## ST2195 CourseworkGit
  
- Answers for the 5 questions listed in the guidelines 
- Answers are in Python and R with an accompanying pdf file for an explanation of the code used
+Answers for the 5 questions listed in the guidelines 
+ 
+Answers are in Python and R with an accompanying pdf file for an explanation of the code used
 
 Datasets are taken from https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/HG7NV7 for the years 2006 ~ 2008 alongside aiports, carriers and plane-data
 
