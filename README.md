@@ -1,4 +1,4 @@
-## ST2195 Programming for Data Science, CourseworkGit
+## ST2195 Programming for Data Science, Coursework
  
 Answers for the 5 questions listed in the guidelines 
  
