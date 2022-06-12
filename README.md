@@ -12,7 +12,7 @@ The questions asked are as follows:
 
 2. Do older planes suffer more delays?
 
-3. How does the number of people flying between different locations chagne over time?
+3. How does the number of people flying between different locations change over time?
 
 4. Can you detect cascading failures as delays in one airport create delays in others?
 
