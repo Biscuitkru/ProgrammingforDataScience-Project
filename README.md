@@ -16,4 +16,4 @@ The questions asked are as follows:
 
 4. Can you detect cascading failures as delays in one airport create delays in others?
 
-5. Use the available vaiables to construct a model that pedicts delays.
+5. Use the available variables to construct a model that pedicts delays.
